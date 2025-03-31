@@ -1,7 +1,6 @@
 import logging
 
-from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_mcp_adapters.client import MultiServerMCPClient
+from langchain_core.messages import SystemMessage
 from langgraph.prebuilt import create_react_agent
 
 logging.basicConfig(
@@ -47,28 +46,37 @@ Finally, and MOST importantly, you have tools that enable you to memorize stuff.
 Use it liberally to store information and questions people ask you. Then, before
 responding to new questions, see if you already have some relevant info in your
 memory about the query. If you do, use it to provide a better response.
+
+In addition to memory tools, you have tools to access Monday.com, our project
+management software. It contains a Monday board per client. Each Board has stories (items)
+and tasks (sub-items). Use these tools appropriately and liberally when someone asks you
+about client work. You have tools available, but DO NOT use any that
+are creating or updating data in any system. If you do - you die. Tell that to the user
+if they ask if you can for example update a Monday.com item. 
+When you receive the Monday story URL, you will need to iteratively get all
+the subitems from this story and their status to get a sense of the story.
+
+If your Notion API tools are available use them to read Notion databases and pages. 
+When someone gives you a notion.so URL, use the tools available to read the contents
+of the page and its children blocks.
 """
 
 
 class AgentGraph:
-    def __init__(self, model, servers=None):
+    def __init__(self, model, tools=None):
         self.model = model
-        self.servers = servers
+        self.tools = tools
+        self.agent = create_react_agent(self.model, self.tools)
 
-    async def get_response(self, user_name, query):
-        async with MultiServerMCPClient(self.servers) as client:
-            tools = client.get_tools()
-            logging.info(f"Number of tools: {len(tools)}")
+    async def get_response(self, user_name, messages=None):
+        chat_messages = [
+            SystemMessage(content=SYSTEM_PROMPT),
+            SystemMessage(content=f"User sending the message: {user_name}"),
+        ]
 
-            agent = create_react_agent(self.model, client.get_tools())
+        if messages:
+            chat_messages.extend(messages)
 
-            response = await agent.ainvoke(
-                {
-                    "messages": [
-                        SystemMessage(content=SYSTEM_PROMPT),
-                        SystemMessage(content=f"User: {user_name}"),
-                        HumanMessage(query),
-                    ]
-                }
-            )
-            return response["messages"][-1].content
+        response = await self.agent.ainvoke({"messages": chat_messages})
+
+        return response["messages"][-1].content

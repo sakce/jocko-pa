@@ -1,6 +1,8 @@
 import asyncio
 import logging
 
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
 from src.config import Configuration
 from src.slack import SlackAgent
 
@@ -18,19 +20,24 @@ async def main() -> None:
             "SLACK_BOT_TOKEN and SLACK_APP_TOKEN must be set in environment variables"
         )
 
-    slack_bot = SlackAgent()
+    servers = config.load_config("servers_config.json")
+    async with MultiServerMCPClient(servers) as client:
+        tools = client.get_tools()
+        logging.info(f"Number of tools: {len(tools)}")
 
-    try:
-        await slack_bot.start()
-        # Keep the main task alive until interrupted
-        while True:
-            await asyncio.sleep(1)
-    except KeyboardInterrupt:
-        logging.info("Shutting down...")
-    except Exception as e:
-        logging.error(f"Error: {e}")
-    finally:
-        await slack_bot.cleanup()
+        slack_bot = SlackAgent(config, tools)
+
+        try:
+            await slack_bot.start()
+            # Keep the main task alive until interrupted
+            while True:
+                await asyncio.sleep(1)
+        except KeyboardInterrupt:
+            logging.info("Shutting down...")
+        except Exception as e:
+            logging.error(f"Error: {e}")
+        finally:
+            await slack_bot.cleanup()
 
 
 if __name__ == "__main__":
